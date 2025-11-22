@@ -1,0 +1,107 @@
+<script>
+  let centers = [];
+  let map;
+  let userMarker = null;
+  let liveWatchId = null;
+
+  // Load centres.json
+  fetch('centres.json')
+    .then(r => r.json())
+    .then(data => {
+      centers = data;
+      initMap();
+    });
+
+  function initMap(){
+    map = L.map('map').setView([19.7515, 75.7139], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Add centre markers
+    centers.forEach(c => {
+      L.marker([c.lat, c.lng]).addTo(map)
+        .bindPopup(`<b>${c.name}</b><br>${c.area}, ${c.city}`);
+    });
+
+    // CLICK ON MAP → Show place name + nearest centre
+    map.on('click', function(e){
+      reverseLookup(e.latlng.lat, e.latlng.lng);
+      showNearest(e.latlng.lat, e.latlng.lng);
+    });
+  }
+
+  // USE MY LOCATION (LIVE TRACKING)
+  document.getElementById('locBtn').onclick = function(){
+    if(!navigator.geolocation){
+      alert("Geolocation not supported");
+      return;
+    }
+
+    // Start live tracking
+    liveWatchId = navigator.geolocation.watchPosition(pos => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+
+      if(userMarker) map.removeLayer(userMarker);
+      userMarker = L.marker([lat, lng], {color:'red'}).addTo(map);
+
+      map.setView([lat, lng], 14);
+
+      reverseLookup(lat, lng); // Show place name
+      showNearest(lat, lng);   // Show nearest centre
+
+    }, () => {
+      alert("Location access denied");
+    });
+  };
+
+  // GET PLACE NAME (Reverse Geocoding)
+  function reverseLookup(lat, lng){
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`)
+      .then(r => r.json())
+      .then(data => {
+        const place = data.display_name || "Unknown Location";
+        document.getElementById('cName').textContent = place;
+        document.getElementById('cAddr').textContent = "";
+      });
+  }
+
+  // FIND NEAREST CENTRE
+  function showNearest(lat, lng){
+    let nearest = null;
+    let minD = Infinity;
+
+    centers.forEach(c => {
+      let d = distance(lat, lng, c.lat, c.lng);
+      if(d < minD){
+        minD = d;
+        nearest = c;
+      }
+    });
+
+    if(nearest){
+      showPanel(nearest, minD);
+    }
+  }
+
+  // UPDATE PANEL
+  function showPanel(center, dist){
+    document.getElementById('cAddr').textContent = `${center.area}, ${center.city}`;
+    document.getElementById('cDist').textContent = `Nearest Centre: ${dist.toFixed(2)} km`;
+    document.getElementById('navBtn').href =
+      `https://www.google.com/maps/dir/?api=1&destination=${center.lat},${center.lng}`;
+    document.getElementById('panel').style.display = 'block';
+  }
+
+  // Distance function
+  function distance(lat1, lon1, lat2, lon2){
+    const R = 6371;
+    const dLat = (lat2-lat1) * Math.PI/180;
+    const dLon = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 +
+      Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
+      Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+</script>
