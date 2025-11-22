@@ -1,107 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mega Blood Donation CAMP 2025</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<style>
+  body { margin:0; font-family: Arial, sans-serif; }
+  header {
+    background:#c62828; color:white; padding:14px;
+    text-align:center; font-size:18px; font-weight:bold;
+    position:relative;
+  }
+  #locBtn {
+    position:absolute; right:10px; top:10px;
+    background:white; color:#c62828; border:none;
+    padding:8px 10px; font-size:14px; border-radius:6px;
+    cursor:pointer; font-weight:bold;
+  }
+  #map { height:70vh; width:100%; }
+  #panel {
+    height:30vh; background:#fff; border-top:2px solid #ddd;
+    padding:12px; display:none;
+  }
+  .title { font-weight:bold; font-size:17px; margin-bottom:6px; }
+  .meta { color:#555; margin-bottom:6px; }
+  .dist { font-weight:bold; margin-bottom:10px; }
+  #navBtn {
+    background:#1565c0; color:white; padding:10px 12px;
+    border-radius:6px; text-decoration:none; font-weight:bold;
+    display:inline-block;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  Mega Blood Donation CAMP 2025<br>
+  MVPM Alumni Across Maharashtra
+  <button id="locBtn">Use My Location</button>
+</header>
+
+<div id="map"></div>
+
+<!-- Info Panel -->
+<div id="panel">
+  <div class="title" id="cName"></div>
+  <div class="meta" id="cAddr"></div>
+  <div class="dist" id="cDist"></div>
+  <a id="navBtn" href="#" target="_blank">Navigate</a>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  let centers = [];
-  let map;
-  let userMarker = null;
-  let liveWatchId = null;
+let centers = [];
+let map, userMarker = null;
 
-  // Load centres.json
-  fetch('centres.json')
-    .then(r => r.json())
-    .then(data => {
-      centers = data;
-      initMap();
-    });
+// Load centres.json
+fetch('centres.json')
+.then(r => r.json())
+.then(data => {
+  centers = data;
+  initMap();
+});
 
-  function initMap(){
-    map = L.map('map').setView([19.7515, 75.7139], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+function initMap(){
+  map = L.map('map').setView([19.7515, 75.7139], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'&copy; OpenStreetMap'
+  }).addTo(map);
 
-    // Add centre markers
-    centers.forEach(c => {
-      L.marker([c.lat, c.lng]).addTo(map)
-        .bindPopup(`<b>${c.name}</b><br>${c.area}, ${c.city}`);
-    });
+  // Add markers
+  centers.forEach(c => {
+    L.marker([c.lat, c.lng]).addTo(map)
+     .bindPopup(`<b>${c.name}</b><br>${c.area}, ${c.city}`);
+  });
 
-    // CLICK ON MAP → Show place name + nearest centre
-    map.on('click', function(e){
-      reverseLookup(e.latlng.lat, e.latlng.lng);
-      showNearest(e.latlng.lat, e.latlng.lng);
-    });
+  // Click anywhere → show place name + nearest center
+  map.on('click', async function(e){
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+
+    const place = await reverseGeocode(lat, lng);
+    showNearest(lat, lng, place);
+  });
+}
+
+// Reverse Geocode (get place name)
+async function reverseGeocode(lat, lng){
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    return data.display_name || "Unknown Location";
+  } catch {
+    return "Unknown Location";
+  }
+}
+
+// USE MY LOCATION
+document.getElementById('locBtn').onclick = function(){
+  if(!navigator.geolocation){
+    alert("Geolocation not supported");
+    return;
   }
 
-  // USE MY LOCATION (LIVE TRACKING)
-  document.getElementById('locBtn').onclick = function(){
-    if(!navigator.geolocation){
-      alert("Geolocation not supported");
-      return;
-    }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
 
-    // Start live tracking
-    liveWatchId = navigator.geolocation.watchPosition(pos => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
+    if(userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker([lat, lng]).addTo(map)
+      .bindPopup("You are here").openPopup();
 
-      if(userMarker) map.removeLayer(userMarker);
-      userMarker = L.marker([lat, lng], {color:'red'}).addTo(map);
+    map.setView([lat,lng], 12);
 
-      map.setView([lat, lng], 14);
+    const place = await reverseGeocode(lat, lng);
+    showNearest(lat, lng, place);
+  }, () => alert("Location access denied"));
+};
 
-      reverseLookup(lat, lng); // Show place name
-      showNearest(lat, lng);   // Show nearest centre
+// FIND NEAREST CENTER
+function showNearest(lat, lng, placeName){
+  let nearest = null, minD = Infinity;
 
-    }, () => {
-      alert("Location access denied");
-    });
-  };
+  centers.forEach(c => {
+    let d = distance(lat, lng, c.lat, c.lng);
+    if(d < minD){ minD = d; nearest = c; }
+  });
 
-  // GET PLACE NAME (Reverse Geocoding)
-  function reverseLookup(lat, lng){
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`)
-      .then(r => r.json())
-      .then(data => {
-        const place = data.display_name || "Unknown Location";
-        document.getElementById('cName').textContent = place;
-        document.getElementById('cAddr').textContent = "";
-      });
+  if(nearest){
+    showPanel(nearest, minD, placeName);
   }
+}
 
-  // FIND NEAREST CENTRE
-  function showNearest(lat, lng){
-    let nearest = null;
-    let minD = Infinity;
+// UPDATE PANEL
+function showPanel(center, dist, placeName){
+  document.getElementById('cName').textContent = center.name;
+  document.getElementById('cAddr').textContent = placeName;
+  document.getElementById('cDist').textContent = `Nearest Center: ${dist.toFixed(2)} km`;
+  document.getElementById('navBtn').href =
+    `https://www.google.com/maps/dir/?api=1&destination=${center.lat},${center.lng}`;
+  document.getElementById('panel').style.display = 'block';
+}
 
-    centers.forEach(c => {
-      let d = distance(lat, lng, c.lat, c.lng);
-      if(d < minD){
-        minD = d;
-        nearest = c;
-      }
-    });
+// Distance KM
+function distance(lat1, lon1, lat2, lon2){
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 
-    if(nearest){
-      showPanel(nearest, minD);
-    }
-  }
-
-  // UPDATE PANEL
-  function showPanel(center, dist){
-    document.getElementById('cAddr').textContent = `${center.area}, ${center.city}`;
-    document.getElementById('cDist').textContent = `Nearest Centre: ${dist.toFixed(2)} km`;
-    document.getElementById('navBtn').href =
-      `https://www.google.com/maps/dir/?api=1&destination=${center.lat},${center.lng}`;
-    document.getElementById('panel').style.display = 'block';
-  }
-
-  // Distance function
-  function distance(lat1, lon1, lat2, lon2){
-    const R = 6371;
-    const dLat = (lat2-lat1) * Math.PI/180;
-    const dLon = (lon2-lon1) * Math.PI/180;
-    const a = Math.sin(dLat/2)**2 +
-      Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
-      Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  }
 </script>
+</body>
+</html>
