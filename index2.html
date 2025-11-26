@@ -8,29 +8,65 @@
 
 <style>
   body { margin:0; font-family: Arial, sans-serif; }
+
   header {
     background:#c62828; color:white; padding:14px;
     text-align:center; font-size:18px; font-weight:bold;
-    position:relative;
+    position:relative; padding-right: 100px;
   }
+
   #locBtn {
-    position:absolute; right:10px; top:10px;
+    position:absolute; right:10px; top:50%;
+    transform: translateY(-50%);
     background:white; color:#c62828; border:none;
     padding:8px 10px; font-size:14px; border-radius:6px;
     cursor:pointer; font-weight:bold;
   }
-  #map { height:70vh; width:100%; }
+
+  @media (max-width: 600px) {
+    header {
+      font-size: 14px;
+      padding: 10px;
+      padding-right: 90px;
+    }
+    
+    #locBtn {
+      font-size: 11px;
+      padding: 6px 8px;
+      right: 5px;
+    }
+  }
+
+  #dateSelect {
+    width:100%; padding:10px; margin:5px 0;
+    font-size:16px; border-radius:5px;
+  }
+
+  #map { height:65vh; width:100%; }
+
   #panel {
-    height:30vh; background:#fff; border-top:2px solid #ddd;
+    height:auto; background:#fff; border-top:2px solid #ddd;
     padding:12px; display:none;
   }
+
   .title { font-weight:bold; font-size:17px; margin-bottom:6px; }
   .meta { color:#555; margin-bottom:6px; }
   .dist { font-weight:bold; margin-bottom:10px; }
+
   #navBtn {
     background:#1565c0; color:white; padding:10px 12px;
     border-radius:6px; text-decoration:none; font-weight:bold;
     display:inline-block;
+  }
+
+  .center-label {
+    background: white;
+    border: 1px solid #999;
+    padding: 3px 6px;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
 </style>
 </head>
@@ -39,12 +75,12 @@
 <header>
   Mega Blood Donation CAMP 2025<br>
   MVPM Alumni Across Maharashtra
-  <button id="locBtn">Use My Location</button>
+  <button id="locBtn">Live Track</button>
 </header>
 
+<select id="dateSelect"></select>
 <div id="map"></div>
 
-<!-- Info Panel -->
 <div id="panel">
   <div class="title" id="cName"></div>
   <div class="meta" id="cAddr"></div>
@@ -53,110 +89,303 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
-let centers = [];
-let map, userMarker = null;
+let allCenters = [];
+let filteredCenters = [];
+let map, userMarker = null, nearestMarker = null;
+let watchID = null;
+let centerMarkers = []; // Store all center markers
+let isTracking = false; // Track if user is tracking location
 
-// Load centres.json
-fetch('centres.json')
-.then(r => r.json())
-.then(data => {
-  centers = data;
-  initMap();
-});
-
-function initMap(){
-  map = L.map('map').setView([19.7515, 75.7139], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'&copy; OpenStreetMap'
-  }).addTo(map);
-
-  // Add markers
-  centers.forEach(c => {
-    L.marker([c.lat, c.lng]).addTo(map)
-     .bindPopup(`<b>${c.name}</b><br>${c.area}, ${c.city}`);
+// Load centres JSON
+fetch("centres.json")
+  .then(r => r.json())
+  .then(data => {
+    allCenters = data;
+    loadDates();
+    initMap();
   });
 
-  // Click anywhere → show place name + nearest center
-  map.on('click', async function(e){
-    const lat = e.latlng.lat;
-    const lng = e.latlng.lng;
+// Populate date dropdown
+function loadDates() {
+  const dates = [...new Set(allCenters.map(c => c.date))];
+  const select = document.getElementById("dateSelect");
 
-    const place = await reverseGeocode(lat, lng);
-    showNearest(lat, lng, place);
+  // Add default "Select Date" option
+  const defaultOpt = document.createElement("option");
+  defaultOpt.value = "";
+  defaultOpt.textContent = "Select Date";
+  defaultOpt.disabled = true;
+  defaultOpt.selected = true;
+  select.appendChild(defaultOpt);
+
+  dates.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d;
+    opt.textContent = "📅 " + d;
+    select.appendChild(opt);
+  });
+
+  select.onchange = filterCenters;
+}
+
+// Filter centers by date
+function filterCenters() {
+  const selected = document.getElementById("dateSelect").value;
+  filteredCenters = allCenters.filter(c => c.date === selected);
+
+  refreshMarkers();
+}
+
+// Remove old markers & add new ones
+function refreshMarkers() {
+  if (!map) return;
+
+  // Remove old center markers
+  centerMarkers.forEach(m => map.removeLayer(m));
+  centerMarkers = [];
+
+  // Remove old nearest marker
+  if (nearestMarker) {
+    map.removeLayer(nearestMarker);
+    nearestMarker = null;
+  }
+
+  // Add new markers for filtered centers
+  filteredCenters.forEach(c => {
+    const marker = L.marker([c.lat, c.lng])
+      .addTo(map)
+      .bindPopup(`<b>${c.name}</b><br>${c.area}, ${c.city}<br>${c.date}`);
+    
+    // Add permanent tooltip (label) that shows center name
+    const tooltip = marker.bindTooltip(c.name, {
+      permanent: true,
+      direction: 'top',
+      className: 'center-label'
+    });
+    
+    // Hide tooltip if tracking is active
+    if (isTracking) {
+      marker.closeTooltip();
+    }
+    
+    // FEATURE 3: Show detailed popup on hover
+    marker.on("mouseover", function () {
+      if (!isTracking) {
+        this.openPopup();
+      }
+    });
+    marker.on("mouseout", function () {
+      this.closePopup();
+    });
+
+    centerMarkers.push(marker);
   });
 }
 
-// Reverse Geocode (get place name)
-async function reverseGeocode(lat, lng){
+// Initialize map
+function initMap() {
+  map = L.map('map').setView([19.75, 75.71], 6);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap"
+  }).addTo(map);
+
+  filterCenters();
+
+  map.on("click", async e => {
+    isTracking = true; // Set tracking mode
+    hideAllLabels(); // Hide all center labels
+    const place = await reverseGeo(e.latlng.lat, e.latlng.lng);
+    showNearest(e.latlng.lat, e.latlng.lng, place);
+  });
+}
+
+// Reverse Geocoding
+async function reverseGeo(lat, lng) {
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return data.display_name || "Unknown Location";
+    let r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+    );
+    let j = await r.json();
+    return j.display_name || "Unknown Location";
   } catch {
     return "Unknown Location";
   }
 }
 
-// USE MY LOCATION
-document.getElementById('locBtn').onclick = function(){
-  if(!navigator.geolocation){
-    alert("Geolocation not supported");
+// LIVE TRACK BUTTON
+document.getElementById("locBtn").onclick = function () {
+  if (watchID) {
+    navigator.geolocation.clearWatch(watchID);
+    watchID = null;
+    this.textContent = "Live Track";
+    alert("Live tracking stopped");
+    isTracking = false; // Stop tracking mode
+    showAllLabels(); // Show all labels again
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
+  this.textContent = "Stop Track";
+  isTracking = true; // Set tracking mode
+  hideAllLabels(); // Hide all center labels
 
-    if(userMarker) map.removeLayer(userMarker);
-    userMarker = L.marker([lat, lng]).addTo(map)
-      .bindPopup("You are here").openPopup();
+  watchID = navigator.geolocation.watchPosition(
+    async pos => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
 
-    map.setView([lat,lng], 12);
+      // FEATURE 2: Update user marker with "You are here" text
+      if (!userMarker) {
+        userMarker = L.marker([lat, lng], {
+          icon: L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -50],
+            shadowSize: [41, 41]
+          })
+        }).addTo(map)
+          .bindPopup("<b>📍 You are here</b>", {
+            closeButton: false,
+            autoClose: false,
+            closeOnClick: false,
+            offset: [0, 25]
+          })
+          .openPopup();
+      } else {
+        userMarker.setLatLng([lat, lng]);
+        userMarker.getPopup().openOn(map);
+      }
 
-    const place = await reverseGeocode(lat, lng);
-    showNearest(lat, lng, place);
-  }, () => alert("Location access denied"));
+      const place = await reverseGeo(lat, lng);
+      showNearest(lat, lng, place);
+    },
+    err => alert("GPS Error"),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+  );
 };
 
-// FIND NEAREST CENTER
-function showNearest(lat, lng, placeName){
-  let nearest = null, minD = Infinity;
+// Find nearest center
+function showNearest(lat, lng, place) {
+  if (filteredCenters.length === 0) return;
 
-  centers.forEach(c => {
+  let minD = Infinity,
+    nearest = null;
+
+  filteredCenters.forEach(c => {
     let d = distance(lat, lng, c.lat, c.lng);
-    if(d < minD){ minD = d; nearest = c; }
+    if (d < minD) {
+      minD = d;
+      nearest = c;
+    }
   });
 
-  if(nearest){
-    showPanel(nearest, minD, placeName);
+  if (!nearest) return;
+
+  // Remove old highlight marker
+  if (nearestMarker) map.removeLayer(nearestMarker);
+
+  // FEATURE 1 & 2: Add red circle marker with "Nearest Location" text
+  nearestMarker = L.circleMarker([nearest.lat, nearest.lng], {
+    radius: 12,
+    color: "red",
+    fillColor: "red",
+    fillOpacity: 0.8
+  })
+  .addTo(map)
+  .bindPopup(`<b style="color:red;">🎯 Nearest Location</b><br><b>${nearest.name}</b><br>${nearest.area}, ${nearest.city}`, {
+    closeButton: false,
+    autoClose: false,
+    closeOnClick: false,
+    offset: [0, -25]
+  })
+  .openPopup();
+
+  // Show popup on hover
+  nearestMarker.on("mouseover", function () {
+    this.openPopup();
+  });
+  nearestMarker.on("mouseout", function () {
+    this.closePopup();
+  });
+
+  // Smart zoom based on distance to avoid overlap
+  let zoomLevel;
+  if (minD < 0.5) {
+    zoomLevel = 16; // Very close - zoom in more
+  } else if (minD < 2) {
+    zoomLevel = 14; // Close - medium zoom
+  } else if (minD < 5) {
+    zoomLevel = 13; // Moderate distance
+  } else if (minD < 10) {
+    zoomLevel = 12; // Far
+  } else if (minD < 20) {
+    zoomLevel = 11; // Very far
+  } else {
+    zoomLevel = 10; // Extremely far
   }
+
+  // Calculate center point between user and nearest location
+  const centerLat = (lat + nearest.lat) / 2;
+  const centerLng = (lng + nearest.lng) / 2;
+
+  // Fit both markers in view
+  const bounds = L.latLngBounds([
+    [lat, lng],
+    [nearest.lat, nearest.lng]
+  ]);
+  
+  map.fitBounds(bounds, {
+    padding: [80, 80], // Add padding so popups don't get cut off
+    maxZoom: zoomLevel
+  });
+
+  showPanel(nearest, minD, place);
 }
 
-// UPDATE PANEL
-function showPanel(center, dist, placeName){
-  document.getElementById('cName').textContent = center.name;
-  document.getElementById('cAddr').textContent = placeName;
-  document.getElementById('cDist').textContent = `Nearest Center: ${dist.toFixed(2)} km`;
-  document.getElementById('navBtn').href =
+// Update bottom info panel
+function showPanel(center, dist, place) {
+  document.getElementById("cName").textContent = center.name;
+  document.getElementById("cAddr").textContent = place;
+  document.getElementById("cDist").textContent =
+    "Distance: " + dist.toFixed(2) + " km";
+
+  document.getElementById("navBtn").href =
     `https://www.google.com/maps/dir/?api=1&destination=${center.lat},${center.lng}`;
-  document.getElementById('panel').style.display = 'block';
+
+  document.getElementById("panel").style.display = "block";
 }
 
-// Distance KM
-function distance(lat1, lon1, lat2, lon2){
+// Haversine distance
+function distance(a, b, c, d) {
   const R = 6371;
-  const dLat = (lat2-lat1) * Math.PI/180;
-  const dLon = (lon2-lon1) * Math.PI/180;
-  const a =
-    Math.sin(dLat/2)**2 +
-    Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
-    Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const dLat = ((c - a) * Math.PI) / 180;
+  const dLon = ((d - b) * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a * Math.PI / 180) *
+    Math.cos(c * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
+// Hide all center labels
+function hideAllLabels() {
+  centerMarkers.forEach(marker => {
+    marker.closeTooltip();
+  });
+}
+
+// Show all center labels
+function showAllLabels() {
+  centerMarkers.forEach(marker => {
+    marker.openTooltip();
+  });
+}
 </script>
+
 </body>
 </html>
