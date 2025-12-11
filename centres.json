@@ -80,32 +80,12 @@
     "location": "https://maps.app.goo.gl/SQtJ7kNgw2Qmomno8"
   },
   {
-    "name": "Latur",
-    "lat": 18.59616485747221,
-    "lng": 76.53626148234731,
-    "area": "Latur City",
-    "city": "Latur",
-    "date": ["12-Dec-25", "14-Dec-25"],
-    "address": "Latur, Maharashtra 413512",
-    "location": "https://maps.app.goo.gl/KVKBw6uHUF7TkguXA"
-  },
-  {
-    "name": "Solapur",
-    "lat": 17.693951689968458,
-    "lng": 75.9031943548523,
-    "area": "Solapur City",
-    "city": "Solapur",
-    "date": ["14-Dec-25"],
-    "address": "Solapur, Maharashtra 413006",
-    "location": "https://maps.app.goo.gl/sbPLvuuF3M9w3J9j8"
-  },
-  {
     "name": "Greenvissage",
     "lat": 18.53681, 
     "lng": 73.85129,
     "area": "Deccan",
     "city": "Pune",
-    "date": ["16-Dec-25"],
+    "date": ["17-Dec-25"],
     "address": "106, Mayfair Tower I, Sphurti Society, Wakadewadi, Shivajinagar, Pune, Maharashtra 411005",
     "location": "https://maps.app.goo.gl/3Y54wQ3i9EiV5n4n6"
   },
@@ -150,13 +130,13 @@
     "location": "https://maps.app.goo.gl/31mp4qEayqqfTHBeA"
   },
   {
-    "name": "Size Master Gauge & Tool",
+    "name": "Size Masters Technologies Ltd",
     "lat": 18.490283937564158,
     "lng": 73.92105651452583,
     "area": "Hadapsar",
     "city": "Pune",
-    "date": [],
-    "address": "SIZE MASTERS GAUGES AND TOOLS, Ramtekdi Industrial Area, Hadapsar, Pune, Maharashtra 411013",
+    "date": [14-Dec-2025],
+    "address": "Plot No. 123, Lane No. 10, Ramtekdi Industrial Area, Hadapsar, Pune, Maharashtra 411013",
     "location": "https://maps.app.goo.gl/A5aFpscgfmuzis6UA"
   },
   {
